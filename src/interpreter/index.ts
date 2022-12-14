@@ -328,12 +328,8 @@ function tick(state: State): State {
 
     // LD F, Vx
     if (kk === 0x29) {
-      const register_vx = registers.v[x];
-      if (register_vx === undefined) {
-        throw new Error(`V[${x}] should be defined`);
-      }
-      registers.i = register_vx;
-      console.log(`Set I(=${registers.i}) to V[${x}](=${register_vx})`);
+      registers.i = registers.v[x] * 5;
+      console.log(`Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
       return new_state();
     }
   }
