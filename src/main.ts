@@ -39,7 +39,10 @@ const app = document.getElementById("app");
 
 let running = false;
 
-function create_control_button(controls: { start(): void; stop(): void }) {
+function create_control_button(
+  root: HTMLElement,
+  controls: { start(): void; stop(): void }
+) {
   const button = document.createElement("button");
   button.innerText = "Start";
   button.addEventListener("click", () => {
@@ -53,12 +56,32 @@ function create_control_button(controls: { start(): void; stop(): void }) {
       button.innerText = "Stop";
     }
   });
-  return button;
+  root.appendChild(button);
+}
+
+async function load_rom(path: string) {
+  const response = await fetch(path);
+  return await response.arrayBuffer();
+}
+
+function create_screen_context(root: HTMLElement) {
+  const screen_element = document.createElement("canvas");
+  screen_element.style.background = "lightgrey";
+  const screen_context = screen_element.getContext("2d");
+  if (!screen_context) {
+    throw new Error("no 2d context");
+  }
+  screen_element.width = 640;
+  screen_element.height = 320;
+
+  root.appendChild(screen_element);
+  return screen_context;
 }
 
 (async () => {
-  const response = await fetch("./roms/games/Airplane.ch8");
-  const content = await response.arrayBuffer();
+  if (!app) {
+    throw new Error("no #app element");
+  }
   window.addEventListener("keyup", (event) => {
     const mapping = input_mappings[event.code];
     if (mapping) {
@@ -71,17 +94,9 @@ function create_control_button(controls: { start(): void; stop(): void }) {
       inputs[mapping] = true;
     }
   });
-  const screen_element = document.createElement("canvas");
-  screen_element.style.background = "lightgrey";
-  const screen_context = screen_element.getContext("2d");
-  if (!screen_context) {
-    throw new Error("no 2d context");
-  }
-  screen_element.width = 640;
-  screen_element.height = 320;
-  const controls = await create_runner(content, inputs, screen_context);
+  const screen_context = create_screen_context(app);
+  const rom = await load_rom("./roms/games/Airplane.ch8");
+  const controls = await create_runner(rom, inputs, screen_context);
 
-  const button = create_control_button(controls);
-  app?.appendChild(button);
-  app?.appendChild(screen_element);
+  create_control_button(app, controls);
 })();
