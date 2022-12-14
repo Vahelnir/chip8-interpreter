@@ -53,6 +53,7 @@ type Controls = {
   stop(): void;
   is_running(): void;
 };
+
 type ControlledTimer = Controls & {
   delay: Delay;
 };
@@ -144,13 +145,13 @@ function tick(state: State): State {
   const new_state = (new_state: Partial<State> = {}): State => {
     return { ...state, instruction_index: instruction_index + 2, ...new_state };
   };
-  console.log(
-    `Instruction: <${instruction[0]
-      .toString(16)
-      .toLocaleUpperCase()} ${instruction[1]
-      .toString(16)
-      .toLocaleUpperCase()}> at ${instruction_index}`
-  );
+  // console.log(
+  //   `Instruction: <${instruction[0]
+  //     .toString(16)
+  //     .toLocaleUpperCase()} ${instruction[1]
+  //     .toString(16)
+  //     .toLocaleUpperCase()}> at ${instruction_index}`
+  // );
 
   if (instruction[0] === 0x00 && instruction[1] === 0xee) {
     const unstack_to = stack.shift();
@@ -181,7 +182,7 @@ function tick(state: State): State {
     const raw_value = get_addr(instruction);
     const value = raw_value;
     stack.push(instruction_index);
-    console.log("add to stack:", instruction_index);
+    console.log("add to stack:", instruction_index, "current stack:", stack);
     return new_state({ instruction_index: value });
   }
 
@@ -215,12 +216,29 @@ function tick(state: State): State {
     return new_state();
   }
 
+  // SE Vx, Vy
+  if (op_code === 0x5) {
+    const x = get_x(instruction);
+    const y = get_y(instruction);
+    console.log(
+      `V[${x}](=${registers.v[x]}) === V[${y}](=${registers.v[y]}) -> ${
+        registers.v[x] === registers.v[y]
+      }`
+    );
+    if (registers.v[x] === registers.v[y]) {
+      console.log("skip next instruction");
+      return new_state({ instruction_index: instruction_index + 4 });
+    }
+    console.log("not skipping");
+    return new_state();
+  }
+
   // LD Vx, byte
   if (op_code === 0x6) {
-    const register_id = get_x(instruction);
-    const value = get_kk(instruction);
-    registers.v[register_id] = value;
-    console.log(`set register V[${register_id}] to ${value}`);
+    const x = get_x(instruction);
+    const kk = get_kk(instruction);
+    console.log(`set register V[${x}](=${registers.v[x]}) to ${kk}`);
+    registers.v[x] = kk;
     return new_state();
   }
 
@@ -228,27 +246,118 @@ function tick(state: State): State {
   if (op_code === 0x7) {
     const x = get_x(instruction);
     const kk = get_kk(instruction);
-
-    const register_vx = registers.v[x];
-    if (register_vx === undefined) {
-      throw new Error(`V[${x}] should be defined`);
-    }
-    console.log(`add ${kk} to V[${x}] (=${register_vx})`);
-    registers.v[x] = register_vx + kk;
+    console.log(`add ${kk} to V[${x}](=${registers.v[x]})`);
+    registers.v[x] += kk;
     return new_state();
   }
 
-  // ADD Vx, byte
   if (op_code === 0x8) {
     const x = get_x(instruction);
     const y = get_y(instruction);
+    const nibble = get_nibble(instruction);
 
-    const register_vy = registers.v[y];
-    if (register_vy === undefined) {
-      throw new Error(`V[${y}] should be defined`);
+    //  LD Vx, Vy
+    if (nibble === 0x0) {
+      console.log(`set V[${x}] to V[${y}](=${registers.v[y]})`);
+      registers.v[x] = registers.v[y];
+      return new_state();
     }
-    console.log(`set V[${x}] to V[${y}](=${register_vy})`);
-    registers.v[x] = register_vy;
+
+    // OR Vx, Vy
+    if (nibble === 0x1) {
+      const or = registers.v[x] | registers.v[y];
+      console.log(
+        `set V[${x}] to V[${y}](=${registers.v[x]}) OR V[${x}](=${registers.v[y]}), is now '${or}'`
+      );
+      registers.v[x] = or;
+      return new_state();
+    }
+
+    // AND Vx, Vy
+    if (nibble === 0x2) {
+      const and = registers.v[x] & registers.v[y];
+      console.log(
+        `set V[${x}] to V[${x}](=${registers.v[x]}) AND V[${y}](=${registers.v[x]}), is now '${and}'`
+      );
+      registers.v[x] = and;
+      return new_state();
+    }
+
+    // XOR Vx, Vy
+    if (nibble === 0x3) {
+      const xor = registers.v[x] ^ registers.v[y];
+      registers.vf = +(xor !== (registers.v[x] | registers.v[y]));
+      console.log(
+        `set V[${x}] to V[${x}](=${registers.v[x]}) XOR V[${y}](=${registers.v[y]}), is now '${xor}'`
+      );
+      registers.v[x] = xor;
+      return new_state();
+    }
+
+    // ADD Vx, Vy
+    if (nibble === 0x4) {
+      const sum = registers.v[x] + registers.v[y];
+      registers.vf = +((sum & (0xf00 >> 16)) > 0);
+      console.log(
+        `set V[${x}] to V[${x}](=${registers.v[x]}) + V[${y}](=${registers.v[y]}), carry: ${registers.vf}`
+      );
+      registers.v[x] = sum & 0x0ff;
+      return new_state();
+    }
+
+    // SUB Vx, Vy
+    if (nibble === 0x5) {
+      registers.vf = +(registers.v[x] < registers.v[y]);
+      console.log(
+        `set V[${x}] to V[${x}](=${registers.v[x]}) - V[${y}](=${registers.v[y]})`
+      );
+      registers.v[x] -= registers.v[y];
+      return new_state();
+    }
+
+    // SHR Vx, Vy
+    if (nibble === 0x6) {
+      registers.vf = +(registers.v[x] & 0x1);
+      const shifted = registers.v[x] >> 1;
+      console.log(`right shift V[${x}](=${registers.v[x]}), is now ${shifted}`);
+      registers.v[x] = shifted;
+      return new_state();
+    }
+
+    // RSB Vx, Vy
+    if (nibble === 0x7) {
+      registers.vf = +(registers.v[y] < registers.v[x]);
+      console.log(
+        `set V[${x}] to V[${y}](=${registers.v[y]}) - V[${x}](=${registers.v[x]})`
+      );
+      registers.v[x] = registers.v[y] - registers.v[x];
+      return new_state();
+    }
+
+    // SHL Vx, Vy
+    if (y === 0x0 && nibble === 0xe) {
+      registers.vf = +(registers.v[x] & 0x80);
+      const shifted = registers.v[x] << 1;
+      console.log(`right shift V[${x}](=${registers.v[x]}), is now ${shifted}`);
+      registers.v[x] = shifted;
+      return new_state();
+    }
+  }
+
+  // SNE Vx, Vy
+  if (op_code === 0x9) {
+    const x = get_x(instruction);
+    const y = get_y(instruction);
+    console.log(
+      `V[${x}](=${registers.v[x]}) !== V[${y}](=${registers.v[y]}) -> ${
+        registers.v[x] !== registers.v[y]
+      }`
+    );
+    if (registers.v[x] !== registers.v[y]) {
+      console.log("skip next instruction");
+      return new_state({ instruction_index: instruction_index + 4 });
+    }
+    console.log("not skipping");
     return new_state();
   }
 
@@ -260,19 +369,20 @@ function tick(state: State): State {
     return new_state();
   }
 
+  // JP V0, addr
+  if (op_code === 0xb) {
+    const jump_to = get_addr(instruction);
+    console.log(`jump to ${jump_to} + ${registers.v[0]}`);
+    return new_state({ instruction_index: jump_to + registers.v[0] });
+  }
+
   // DRW Vx, Vy, nibble
   if (op_code === 0xd) {
     const x_index = get_x(instruction);
     const y_index = get_y(instruction);
     const nibble = get_nibble(instruction);
     const x = registers.v[x_index];
-    if (x === undefined) {
-      throw new Error(`V[${x_index}] should be defined`);
-    }
     const y = registers.v[y_index];
-    if (y === undefined) {
-      throw new Error(`V[${y_index}] should be defined`);
-    }
     console.log(`draw with x: V[${x_index}](=${x}), y: V[${y_index}](=${y})`);
     draw_sprite(state, { x, y }, registers.i, nibble);
     update_screen(state);
@@ -284,12 +394,9 @@ function tick(state: State): State {
     const kk = get_kk(instruction);
 
     if (kk === 0xa1) {
-      const register_vx = registers.v[x];
-      if (register_vx === undefined) {
-        throw new Error(`V[${x}] should be defined`);
-      }
-      console.log("waiting for", register_vx, "input");
-      if (!inputs[register_vx]) {
+      console.log("waiting for", registers.v[x], "input");
+      if (!inputs[registers.v[x]]) {
+        console.log("input ", registers.v[x], "pressed");
         return new_state({ instruction_index: instruction_index + 4 });
       }
       return new_state();
@@ -308,22 +415,20 @@ function tick(state: State): State {
 
     // LD ST, Vx
     if (kk === 0x07) {
-      registers.v[x] = timer.timer;
+      registers.v[x] = timer.sound;
       return new_state();
     }
 
     // LD DT, Vx
     if (kk === 0x15) {
-      timer.timer = x;
       console.log("Set timer delay to", x);
-      return new_state();
+      return new_state({ timer: { ...timer, timer: x } });
     }
 
     // LD ST, Vx
     if (kk === 0x18) {
-      timer.sound = x;
       console.log("Set sound delay to", x);
-      return new_state();
+      return new_state({ timer: { ...timer, sound: x } });
     }
 
     // LD F, Vx
