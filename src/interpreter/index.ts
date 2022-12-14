@@ -1,3 +1,19 @@
+import {
+  get_addr,
+  get_kk,
+  get_nibble,
+  get_upper_bits,
+  get_x,
+  get_y,
+} from "./instruction_utils";
+import { create_memory_from_program, Memory } from "./memory";
+import {
+  Screen,
+  create_screen_grid,
+  draw_sprite,
+  update_screen,
+} from "./screen";
+
 // this is ugly af for now, don't judge me :(
 const available_inputs = [
   0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,
@@ -5,160 +21,81 @@ const available_inputs = [
 export type AvailableInputs = typeof available_inputs[number];
 export type InputMap = Record<AvailableInputs, boolean>;
 
-type Position = { x: number; y: number };
-
-type Registers = {
+export type Registers = {
   v: number[];
   i: number;
   vf: number;
 };
-type Screen = boolean[][];
-type Timer = {
+
+export type Delay = {
   interval_id: number | undefined;
-  delay: number;
+  timer: number;
+  sound: number;
 };
 
-type State = {
+export type State = {
   registers: Registers;
-  memory: Uint8Array;
+  memory: Memory;
   screen: Screen;
-  screen_element: CanvasRenderingContext2D;
-  timer: Timer;
-  sound: Timer;
+  timer: Delay;
   inputs: InputMap;
   instruction_index: number;
 };
 
-const MAX_SCREEN_HEIGHT = 32;
-const MAX_SCREEN_WIDTH = 64;
-
 const stack: number[] = [];
-
-function create_screen(): Screen {
-  return Array(MAX_SCREEN_HEIGHT)
-    .fill(0)
-    .map(() => Array(MAX_SCREEN_WIDTH).fill(false));
-}
-
-function create_empty_memory() {
-  return new Uint8Array(4095);
-}
-
-function create_memory_from_program(program: Uint8Array) {
-  const memory = create_empty_memory();
-  memory.set(program, 512);
-  return memory;
-}
-
-function get_upper_bits(value: number) {
-  return value >> 4;
-}
-
-function get_low_bits(value: number) {
-  return value & 0xf;
-}
-
-function get_addr(instruction: Uint8Array) {
-  return (get_low_bits(instruction[0]) << 8) | instruction[1];
-}
-
-function get_nibble(instruction: Uint8Array) {
-  return get_low_bits(instruction[1]);
-}
-
-function get_x(instruction: Uint8Array) {
-  return get_low_bits(instruction[0]);
-}
-
-function get_y(instruction: Uint8Array) {
-  return get_upper_bits(instruction[1]);
-}
-
-function get_kk(instruction: Uint8Array) {
-  return instruction[1];
-}
-
-function draw_sprite(
-  { memory, screen, screen_element, registers }: State,
-  position: Position,
-  sprite_address: number,
-  sprite_height: number
-) {
-  registers.vf = 0;
-  const sprite = memory.slice(sprite_address, sprite_address + sprite_height);
-  for (let y = position.y; y < position.y + sprite_height; y++) {
-    const sprite_row = sprite[y - position.y]
-      .toString(2)
-      .split("")
-      .map((v) => v === "1");
-    for (let x = position.x; x < position.x + 8; x++) {
-      const current_pixel = screen[y % MAX_SCREEN_HEIGHT][x % MAX_SCREEN_WIDTH];
-      const sprite_pixel = sprite_row[x - position.x];
-      // collision
-      if (current_pixel && sprite_pixel) {
-        console.log("collision !", x, y);
-        registers.vf = 1;
-      }
-      screen[y % MAX_SCREEN_HEIGHT][x % MAX_SCREEN_WIDTH] = !!(
-        (current_pixel || sprite_pixel) &&
-        current_pixel !== sprite_pixel
-      );
-    }
-  }
-}
-
-function update_screen({ screen_element, screen }: State) {
-  const scale = 10;
-  screen_element.clearRect(
-    0,
-    0,
-    MAX_SCREEN_WIDTH * scale,
-    MAX_SCREEN_HEIGHT * scale
-  );
-  screen.map((row, y) =>
-    row.map((pixel, x) => {
-      if (!pixel) {
-        return;
-      }
-      screen_element.fillRect(x * scale, y * scale, 1 * scale, 1 * scale);
-    })
-  );
-}
 
 function play_sound() {
   console.log("play sound");
 }
 
-function create_timer(timer: Timer, x: number, every_tick: () => void) {
-  const clear_timer = () => {
-    if (timer.interval_id) {
-      clearTimeout(timer.interval_id);
-      console.log("timer stopped");
-    }
-    timer.interval_id = undefined;
+type Controls = {
+  start(): void;
+  stop(): void;
+  is_running(): void;
+};
+type ControlledTimer = Controls & {
+  delay: Delay;
+};
+function create_timer(): ControlledTimer {
+  const delay = { timer: 0, sound: 0 };
+  let interval_id: number | undefined;
+  return {
+    start() {
+      if (interval_id !== undefined) {
+        return;
+      }
+      console.log("timer & sound started");
+      interval_id = setInterval(() => {
+        if (delay.timer > 0) {
+          delay.timer--;
+        }
+
+        if (delay.sound > 0) {
+          play_sound();
+          delay.sound--;
+        }
+      }, 1000 / 60);
+    },
+    stop() {
+      if (interval_id === undefined) {
+        return;
+      }
+      clearInterval(interval_id);
+      interval_id = undefined;
+      console.log("timer & sound stopped");
+    },
+    is_running() {},
+    delay: { ...delay, interval_id },
   };
-  timer.delay = x;
-  console.log("Set timer delay to", x);
-  if (x === 0) {
-    clear_timer();
-    return;
-  }
-  console.log("starting timer");
-  timer.interval_id = setInterval(() => {
-    timer.delay--;
-    every_tick();
-    if (timer.delay === 0) {
-      clear_timer();
-    }
-  }, 1000 / 60);
 }
 
 export async function create_runner(
   program_rom: ArrayBuffer,
   inputs: InputMap,
   screen_element: CanvasRenderingContext2D
-) {
+): Promise<Controls> {
   const program_view = new Uint8Array(program_rom);
+  const controlled_timer = create_timer();
   let state: State = {
     registers: {
       v: Array(16).fill(0),
@@ -166,37 +103,40 @@ export async function create_runner(
       vf: 0,
     },
     memory: create_memory_from_program(program_view),
-    screen: create_screen(),
-    screen_element,
-    timer: {
-      interval_id: undefined,
-      delay: 0,
-    },
-    sound: {
-      interval_id: undefined,
-      delay: 0,
-    },
+    screen: { grid: create_screen_grid(), element: screen_element },
+    timer: controlled_timer.delay,
     inputs,
     instruction_index: 512,
   };
-  console.log("length in bytes:", program_rom.byteLength);
+
   let loop: number | undefined;
-  const start = () => {
-    if (loop) return;
-    loop = setInterval(() => {
-      state = tick(state);
-    }, 1000 / 500);
-  };
   const stop = () => {
-    if (!loop) return;
+    if (loop === undefined) return;
+    controlled_timer.stop();
     clearInterval(loop);
     loop = undefined;
   };
-  return { start, stop };
+
+  const start = () => {
+    if (loop !== undefined) return;
+    controlled_timer.start();
+    loop = setInterval(() => {
+      try {
+        state = tick(state);
+      } catch (err) {
+        stop();
+        console.error(err);
+      }
+    }, 1000 / 500);
+  };
+
+  const is_running = () => controlled_timer.delay.interval_id !== undefined;
+
+  return { start, stop, is_running };
 }
 
 function tick(state: State): State {
-  const { memory, registers, timer, sound, instruction_index, inputs } = state;
+  const { memory, registers, timer, instruction_index, inputs, screen } = state;
   const instruction = memory.subarray(instruction_index, instruction_index + 2);
 
   const op_code = get_upper_bits(instruction[0]);
@@ -224,7 +164,9 @@ function tick(state: State): State {
   if (instruction[0] === 0x00 && instruction[1] === 0xe0) {
     console.log("clear screen");
     update_screen(state);
-    return new_state({ screen: create_screen() });
+    return new_state({
+      screen: { grid: create_screen_grid(), element: screen.element },
+    });
   }
 
   // JMP nnn
@@ -360,27 +302,27 @@ function tick(state: State): State {
 
     // LD Vx, DT
     if (kk === 0x07) {
-      registers.v[x] = timer.delay;
+      registers.v[x] = timer.timer;
       return new_state();
     }
 
     // LD ST, Vx
     if (kk === 0x07) {
-      registers.v[x] = timer.delay;
+      registers.v[x] = timer.timer;
       return new_state();
     }
 
     // LD DT, Vx
     if (kk === 0x15) {
-      create_timer(timer, x, () => {});
+      timer.timer = x;
+      console.log("Set timer delay to", x);
       return new_state();
     }
 
     // LD ST, Vx
     if (kk === 0x18) {
-      create_timer(sound, x, () => {
-        play_sound();
-      });
+      timer.sound = x;
+      console.log("Set sound delay to", x);
       return new_state();
     }
 
@@ -401,6 +343,6 @@ function tick(state: State): State {
       .toString(16)
       .toLocaleUpperCase()} ${instruction[1].toString(16).toLocaleUpperCase()}>`
   );
+
   throw new Error("Not implemented yet");
-  return new_state();
 }

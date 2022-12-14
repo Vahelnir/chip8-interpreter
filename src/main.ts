@@ -57,7 +57,7 @@ function create_control_button(controls: { start(): void; stop(): void }) {
 }
 
 (async () => {
-  const response = await fetch("./roms/Airplane.ch8");
+  const response = await fetch("./roms/games/Airplane.ch8");
   const content = await response.arrayBuffer();
   window.addEventListener("keyup", (event) => {
     const mapping = input_mappings[event.code];
