@@ -1,32 +1,34 @@
 import { create_runner, AvailableInputs, InputMap } from "./interpreter";
-const inputs: InputMap = {
-  0x1: false,
-  0x2: false,
-  0x3: false,
-  0x4: false,
-  0x5: false,
-  0x6: false,
-  0x7: false,
-  0x8: false,
-  0x9: false,
-  0xa: false,
-  0xb: false,
-  0xc: false,
-  0xd: false,
-  0xe: false,
-  0xf: false,
-};
+const inputs: InputMap = new Map([
+  [0x0, false],
+  [0x1, false],
+  [0x2, false],
+  [0x3, false],
+  [0x4, false],
+  [0x5, false],
+  [0x6, false],
+  [0x7, false],
+  [0x8, false],
+  [0x9, false],
+  [0xa, false],
+  [0xb, false],
+  [0xc, false],
+  [0xd, false],
+  [0xe, false],
+  [0xf, false],
+]);
 
 const input_mappings: Record<string, AvailableInputs> = {
-  Digit1: 1,
-  Digit2: 2,
-  Digit3: 3,
-  Digit4: 4,
-  Digit5: 5,
-  Digit6: 6,
-  Digit7: 7,
-  Digit8: 8,
-  Digit9: 9,
+  Digit0: 0x0,
+  Digit1: 0x1,
+  Digit2: 0x2,
+  Digit3: 0x3,
+  Digit4: 0x4,
+  Digit5: 0x5,
+  Digit6: 0x6,
+  Digit7: 0x7,
+  Digit8: 0x8,
+  Digit9: 0x9,
   KeyQ: 0xa,
   KeyB: 0xb,
   KeyC: 0xc,
@@ -84,18 +86,18 @@ function create_screen_context(root: HTMLElement) {
   }
   window.addEventListener("keyup", (event) => {
     const mapping = input_mappings[event.code];
-    if (mapping) {
-      inputs[mapping] = false;
+    if (mapping !== undefined) {
+      inputs.set(mapping, false);
     }
   });
   window.addEventListener("keydown", (event) => {
     const mapping = input_mappings[event.code];
-    if (mapping) {
-      inputs[mapping] = true;
+    if (mapping !== undefined) {
+      inputs.set(mapping, true);
     }
   });
   const screen_context = create_screen_context(app);
-  const rom = await load_rom("./roms/games/Airplane.ch8");
+  const rom = await load_rom("./roms/chip8-test-suite.ch8");
   const controls = await create_runner(rom, inputs, screen_context);
 
   create_control_button(app, controls);
