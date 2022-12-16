@@ -19,10 +19,10 @@ const available_inputs = [
   0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf,
 ];
 export type AvailableInputs = typeof available_inputs[number];
-export type InputMap = Record<AvailableInputs, boolean>;
+export type InputMap = Map<AvailableInputs, boolean>;
 
 export type Registers = {
-  v: number[];
+  v: Uint8Array;
   i: number;
   vf: number;
 };
@@ -40,12 +40,11 @@ export type State = {
   timer: Delay;
   inputs: InputMap;
   instruction_index: number;
+  stack: number[];
 };
 
-const stack: number[] = [];
-
 function play_sound() {
-  console.log("play sound");
+  log("play sound");
 }
 
 type Controls = {
@@ -65,7 +64,7 @@ function create_timer(): ControlledTimer {
       if (interval_id !== undefined) {
         return;
       }
-      console.log("timer & sound started");
+      log("timer & sound started");
       interval_id = setInterval(() => {
         if (delay.timer > 0) {
           delay.timer--;
@@ -83,7 +82,7 @@ function create_timer(): ControlledTimer {
       }
       clearInterval(interval_id);
       interval_id = undefined;
-      console.log("timer & sound stopped");
+      log("timer & sound stopped");
     },
     is_running() {},
     delay: { ...delay, interval_id },
@@ -99,7 +98,7 @@ export async function create_runner(
   const controlled_timer = create_timer();
   let state: State = {
     registers: {
-      v: Array(16).fill(0),
+      v: new Uint8Array(16),
       i: 0,
       vf: 0,
     },
@@ -108,7 +107,11 @@ export async function create_runner(
     timer: controlled_timer.delay,
     inputs,
     instruction_index: 512,
+    stack: [],
   };
+
+  // CHIP8-TEST-SUITE OPCODE TEST LOADER
+  // state.memory[0x1ff] = 2;
 
   let loop: number | undefined;
   const stop = () => {
@@ -136,44 +139,60 @@ export async function create_runner(
   return { start, stop, is_running };
 }
 
+const logs_enabled = true;
+function log(...logs: unknown[]) {
+  if (!logs_enabled) return;
+  console.log(...logs);
+}
+
 function tick(state: State): State {
-  const { memory, registers, timer, instruction_index, inputs, screen } = state;
-  const instruction = memory.subarray(instruction_index, instruction_index + 2);
+  const { memory, registers, timer, instruction_index, inputs, screen, stack } =
+    state;
+  const instruction = memory.subarray(
+    instruction_index & 0xfff,
+    (instruction_index & 0xfff) + 2
+  );
 
   const op_code = get_upper_bits(instruction[0]);
 
   const new_state = (new_state: Partial<State> = {}): State => {
     return { ...state, instruction_index: instruction_index + 2, ...new_state };
   };
-  // console.log(
-  //   `Instruction: <${instruction[0]
-  //     .toString(16)
-  //     .toLocaleUpperCase()} ${instruction[1]
-  //     .toString(16)
-  //     .toLocaleUpperCase()}> at ${instruction_index}`
-  // );
+  log(
+    `Instruction: <${instruction[0]
+      .toString(16)
+      .toLocaleUpperCase()} ${instruction[1]
+      .toString(16)
+      .toLocaleUpperCase()}> at ${instruction_index}`
+  );
 
   if (instruction[0] === 0x00 && instruction[1] === 0xee) {
     const unstack_to = stack.shift();
     if (unstack_to === undefined) {
       throw new Error("Cannot unstack to " + unstack_to);
     }
-    console.log("unstack to", unstack_to);
+    log("unstack to", unstack_to);
     return new_state({ instruction_index: unstack_to + 2 });
   }
 
   if (instruction[0] === 0x00 && instruction[1] === 0xe0) {
-    console.log("clear screen");
-    update_screen(state);
-    return new_state({
+    const new_state_object = new_state({
       screen: { grid: create_screen_grid(), element: screen.element },
     });
+    log("clear screen");
+    update_screen(new_state_object);
+    return new_state_object;
+  }
+
+  if (op_code === 0x0) {
+    log("SYS call, IGNORING");
+    return new_state();
   }
 
   // JMP nnn
   if (op_code === 0x1) {
     const jump_to = get_addr(instruction);
-    console.log("jump to", jump_to);
+    log("jump to", jump_to);
     return new_state({ instruction_index: jump_to });
   }
 
@@ -181,7 +200,10 @@ function tick(state: State): State {
   if (op_code === 0x2) {
     const address_to_call = get_addr(instruction);
     stack.push(instruction_index);
-    console.log("add to stack:", instruction_index, "current stack:", stack);
+    if (stack.length >= 16) {
+      console.error("STACK TOO BIG WTF");
+    }
+    log("add to stack:", instruction_index, "current stack:", stack);
     return new_state({ instruction_index: address_to_call });
   }
 
@@ -189,14 +211,12 @@ function tick(state: State): State {
   if (op_code === 0x3) {
     const x = get_x(instruction);
     const kk = get_kk(instruction);
-    console.log(
-      `V[${x}](=${registers.v[x]}) === ${kk} -> ${registers.v[x] === kk}`
-    );
+    log(`V[${x}](=${registers.v[x]}) === ${kk} -> ${registers.v[x] === kk}`);
     if (registers.v[x] === kk) {
-      console.log("skip next instruction");
+      log("skip next instruction");
       return new_state({ instruction_index: instruction_index + 4 });
     }
-    console.log("not skipping");
+    log("not skipping");
     return new_state();
   }
 
@@ -204,14 +224,12 @@ function tick(state: State): State {
   if (op_code === 0x4) {
     const x = get_x(instruction);
     const kk = get_kk(instruction);
-    console.log(
-      `V[${x}](=${registers.v[x]}) !== ${kk} -> ${registers.v[x] !== kk}`
-    );
+    log(`V[${x}](=${registers.v[x]}) !== ${kk} -> ${registers.v[x] !== kk}`);
     if (registers.v[x] !== kk) {
-      console.log("skip next instruction");
+      log("skip next instruction");
       return new_state({ instruction_index: instruction_index + 4 });
     }
-    console.log("not skipping");
+    log("not skipping");
     return new_state();
   }
 
@@ -219,16 +237,16 @@ function tick(state: State): State {
   if (op_code === 0x5) {
     const x = get_x(instruction);
     const y = get_y(instruction);
-    console.log(
+    log(
       `V[${x}](=${registers.v[x]}) === V[${y}](=${registers.v[y]}) -> ${
         registers.v[x] === registers.v[y]
       }`
     );
     if (registers.v[x] === registers.v[y]) {
-      console.log("skip next instruction");
+      log("skip next instruction");
       return new_state({ instruction_index: instruction_index + 4 });
     }
-    console.log("not skipping");
+    log("not skipping");
     return new_state();
   }
 
@@ -236,7 +254,7 @@ function tick(state: State): State {
   if (op_code === 0x6) {
     const x = get_x(instruction);
     const kk = get_kk(instruction);
-    console.log(`set register V[${x}](=${registers.v[x]}) to ${kk}`);
+    log(`set register V[${x}](=${registers.v[x]}) to ${kk}`);
     registers.v[x] = kk;
     return new_state();
   }
@@ -245,7 +263,7 @@ function tick(state: State): State {
   if (op_code === 0x7) {
     const x = get_x(instruction);
     const kk = get_kk(instruction);
-    console.log(`add ${kk} to V[${x}](=${registers.v[x]})`);
+    log(`add ${kk} to V[${x}](=${registers.v[x]})`);
     registers.v[x] += kk;
     return new_state();
   }
@@ -257,7 +275,7 @@ function tick(state: State): State {
 
     //  LD Vx, Vy
     if (nibble === 0x0) {
-      console.log(`set V[${x}] to V[${y}](=${registers.v[y]})`);
+      log(`set V[${x}] to V[${y}](=${registers.v[y]})`);
       registers.v[x] = registers.v[y];
       return new_state();
     }
@@ -265,7 +283,7 @@ function tick(state: State): State {
     // OR Vx, Vy
     if (nibble === 0x1) {
       const or = registers.v[x] | registers.v[y];
-      console.log(
+      log(
         `set V[${x}] to V[${y}](=${registers.v[x]}) OR V[${x}](=${registers.v[y]}), is now '${or}'`
       );
       registers.v[x] = or;
@@ -275,7 +293,7 @@ function tick(state: State): State {
     // AND Vx, Vy
     if (nibble === 0x2) {
       const and = registers.v[x] & registers.v[y];
-      console.log(
+      log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) AND V[${y}](=${registers.v[x]}), is now '${and}'`
       );
       registers.v[x] = and;
@@ -286,7 +304,7 @@ function tick(state: State): State {
     if (nibble === 0x3) {
       const xor = registers.v[x] ^ registers.v[y];
       registers.vf = +(xor !== (registers.v[x] | registers.v[y]));
-      console.log(
+      log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) XOR V[${y}](=${registers.v[y]}), is now '${xor}'`
       );
       registers.v[x] = xor;
@@ -297,7 +315,7 @@ function tick(state: State): State {
     if (nibble === 0x4) {
       const sum = registers.v[x] + registers.v[y];
       registers.vf = +(sum > 255);
-      console.log(
+      log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) + V[${y}](=${registers.v[y]}), carry: ${registers.vf}`
       );
       registers.v[x] = sum & 0x0ff;
@@ -307,7 +325,7 @@ function tick(state: State): State {
     // SUB Vx, Vy
     if (nibble === 0x5) {
       registers.vf = +(registers.v[x] < registers.v[y]);
-      console.log(
+      log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) - V[${y}](=${registers.v[y]})`
       );
       registers.v[x] -= registers.v[y];
@@ -318,7 +336,7 @@ function tick(state: State): State {
     if (nibble === 0x6) {
       registers.vf = +(registers.v[x] & 0x1);
       const shifted = registers.v[x] >> 1;
-      console.log(`right shift V[${x}](=${registers.v[x]}), is now ${shifted}`);
+      log(`right shift V[${x}](=${registers.v[x]}), is now ${shifted}`);
       registers.v[x] = shifted;
       return new_state();
     }
@@ -326,7 +344,7 @@ function tick(state: State): State {
     // RSB Vx, Vy
     if (nibble === 0x7) {
       registers.vf = +(registers.v[y] < registers.v[x]);
-      console.log(
+      log(
         `set V[${x}] to V[${y}](=${registers.v[y]}) - V[${x}](=${registers.v[x]})`
       );
       registers.v[x] = registers.v[y] - registers.v[x];
@@ -334,10 +352,14 @@ function tick(state: State): State {
     }
 
     // SHL Vx, Vy
-    if (y === 0x0 && nibble === 0xe) {
-      registers.vf = +(registers.v[x] & 0x80);
-      const shifted = registers.v[x] << 1;
-      console.log(`right shift V[${x}](=${registers.v[x]}), is now ${shifted}`);
+    if (nibble === 0xe) {
+      let v_position = y === 0 ? x : y;
+
+      registers.vf = +(registers.v[v_position] & 0x80);
+      const shifted = registers.v[v_position] << 1;
+      log(
+        `right shift V[${v_position}](=${registers.v[v_position]}), is now ${shifted}`
+      );
       registers.v[x] = shifted;
       return new_state();
     }
@@ -347,16 +369,17 @@ function tick(state: State): State {
   if (op_code === 0x9) {
     const x = get_x(instruction);
     const y = get_y(instruction);
-    console.log(
+    log(
       `V[${x}](=${registers.v[x]}) !== V[${y}](=${registers.v[y]}) -> ${
         registers.v[x] !== registers.v[y]
       }`
     );
+
     if (registers.v[x] !== registers.v[y]) {
-      console.log("skip next instruction");
+      log("skip next instruction");
       return new_state({ instruction_index: instruction_index + 4 });
     }
-    console.log("not skipping");
+    log("not skipping");
     return new_state();
   }
 
@@ -364,14 +387,14 @@ function tick(state: State): State {
   if (op_code === 0xa) {
     const value = get_addr(instruction);
     registers.i = value;
-    console.log(`set register I to ${registers.i}`);
+    log(`set register I to ${registers.i}`);
     return new_state();
   }
 
   // JP V0, addr
   if (op_code === 0xb) {
     const jump_to = get_addr(instruction);
-    console.log(`jump to ${jump_to} + ${registers.v[0]}`);
+    log(`jump to ${jump_to} + ${registers.v[0]}`);
     return new_state({ instruction_index: jump_to + registers.v[0] });
   }
 
@@ -391,7 +414,7 @@ function tick(state: State): State {
     const nibble = get_nibble(instruction);
     const x = registers.v[x_index];
     const y = registers.v[y_index];
-    console.log(`draw with x: V[${x_index}](=${x}), y: V[${y_index}](=${y})`);
+    log(`draw with x: V[${x_index}](=${x}), y: V[${y_index}](=${y})`);
     draw_sprite(state, { x, y }, registers.i, nibble);
     update_screen(state);
     return new_state();
@@ -401,10 +424,21 @@ function tick(state: State): State {
     const x = get_x(instruction);
     const kk = get_kk(instruction);
 
+    // SKPR x
+    if (kk === 0x9e) {
+      log("input is pressed ?", registers.v[x], "input");
+      if (inputs.get(registers.v[x])) {
+        log("input ", registers.v[x], "pressed, skipping next instruction");
+        return new_state({ instruction_index: instruction_index + 4 });
+      }
+      return new_state();
+    }
+
+    // SKUP x
     if (kk === 0xa1) {
-      console.log("waiting for", registers.v[x], "input");
-      if (!inputs[registers.v[x]]) {
-        console.log("input ", registers.v[x], "pressed");
+      log("input is pressed ?", registers.v[x], "input");
+      if (!inputs.get(registers.v[x])) {
+        log("input ", registers.v[x], "not pressed, skipping next instruction");
         return new_state({ instruction_index: instruction_index + 4 });
       }
       return new_state();
@@ -421,28 +455,43 @@ function tick(state: State): State {
       return new_state();
     }
 
-    // LD ST, Vx
-    if (kk === 0x07) {
-      registers.v[x] = timer.sound;
-      return new_state();
+    // LD Vx, K
+    if (kk === 0x0a) {
+      log("waiting for any input...");
+      const pressed_input = [...inputs.entries()].find(
+        ([_key, pressed]) => pressed
+      );
+      if (pressed_input !== undefined) {
+        registers.v[x] = pressed_input[0];
+        return new_state();
+      }
+      log("no input pressed");
+      return new_state({ instruction_index });
     }
 
     // LD DT, Vx
     if (kk === 0x15) {
-      console.log("Set timer delay to", x);
+      log("Set timer delay to", x);
       return new_state({ timer: { ...timer, timer: x } });
     }
 
     // LD ST, Vx
     if (kk === 0x18) {
-      console.log("Set sound delay to", x);
+      log("Set sound delay to", x);
       return new_state({ timer: { ...timer, sound: x } });
+    }
+
+    // ADD I, Vx
+    if (kk === 0x1e) {
+      registers.i += registers.v[x];
+      log(`Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
+      return new_state();
     }
 
     // LD F, Vx
     if (kk === 0x29) {
       registers.i = registers.v[x] * 5;
-      console.log(`Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
+      log(`Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
       return new_state();
     }
 
@@ -450,38 +499,50 @@ function tick(state: State): State {
     if (kk === 0x33) {
       let vx = registers.v[x];
       memory[registers.i + 2] = vx % 10;
-      vx /= Math.floor(10);
+      vx = Math.floor(vx / 10);
 
       memory[registers.i + 1] = vx % 10;
-      vx /= Math.floor(10);
+      vx = Math.floor(vx / 10);
 
       memory[registers.i] = vx % 10;
 
-      console.log(`Set V[${x}] in memory`);
+      log(`Set V[${x}] in memory`);
       return new_state();
     }
 
     // LD [I], Vx
     if (kk === 0x55) {
-      memory.set(registers.v, registers.i);
-      console.log(`Set whole register V in memory`);
+      console.log("DEBUG loading from 0 to", x + 1);
+      for (let i = 0; i < x + 1; i++) {
+        memory[registers.i + i] = registers.v[i];
+      }
+      registers.i += x + 1;
+      log(
+        `Set whole register V in memory at location ${registers.i}`,
+        registers.v
+      );
       return new_state();
     }
 
     // LD [I], Vx
     if (kk === 0x65) {
-      registers.v = [
-        ...memory.slice(registers.i, registers.i + registers.v.length),
-      ];
-      console.log(`Load whole register V from memory`);
+      registers.v.set(memory.slice(registers.i, registers.i + x + 1));
+      // registers.v = memory.slice(registers.i, registers.i + x + 1);
+      registers.i += x + 1;
+      log(
+        `Load whole register V from memory at location ${registers.i}`,
+        registers.v
+      );
       return new_state();
     }
   }
 
-  console.log(
+  log(
     `Unrecognized instruction: <${instruction[0]
       .toString(16)
-      .toLocaleUpperCase()} ${instruction[1].toString(16).toLocaleUpperCase()}>`
+      .toLocaleUpperCase()} ${instruction[1]
+      .toString(16)
+      .toLocaleUpperCase()}> at position: ${instruction_index}`
   );
 
   throw new Error("Not implemented yet");
