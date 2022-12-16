@@ -24,7 +24,6 @@ export type InputMap = Map<AvailableInputs, boolean>;
 export type Registers = {
   v: Uint8Array;
   i: number;
-  vf: number;
 };
 
 export type Delay = {
@@ -299,7 +298,6 @@ function tick(state: State): State {
     // XOR Vx, Vy
     if (nibble === 0x3) {
       const xor = registers.v[x] ^ registers.v[y];
-      registers.vf = +(xor !== (registers.v[x] | registers.v[y]));
       log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) XOR V[${y}](=${registers.v[y]}), is now '${xor}'`
       );
@@ -311,9 +309,8 @@ function tick(state: State): State {
     // ADD Vx, Vy
     if (nibble === 0x4) {
       const sum = registers.v[x] + registers.v[y];
-      registers.vf = +(sum > 255);
       log(
-        `set V[${x}] to V[${x}](=${registers.v[x]}) + V[${y}](=${registers.v[y]}), carry: ${registers.vf}`
+        `set V[${x}] to V[${x}](=${registers.v[x]}) + V[${y}](=${registers.v[y]}), carry: ${registers.v[0xf]}`
       );
       registers.v[x] = sum & 0x0ff;
       registers.v[0xf] = +(sum > 255);
@@ -400,7 +397,7 @@ function tick(state: State): State {
   if (op_code === 0xb) {
     const jump_to = get_addr(instruction);
     log(`jump to ${jump_to} + ${registers.v[0]}`);
-    return new_state({ instruction_index: jump_to + registers.v[0] });
+    return new_state({ instruction_index: (jump_to + registers.v[0]) & 0xfff });
   }
 
   // RND Vx, byte
@@ -419,7 +416,9 @@ function tick(state: State): State {
     const nibble = get_nibble(instruction);
     const x = registers.v[x_index];
     const y = registers.v[y_index];
-    log(`draw with x: V[${x_index}](=${x}), y: V[${y_index}](=${y})`);
+    log(
+      `draw with x: V[${x_index}](=${x}), y: V[${y_index}](=${y}) sprite from ${registers.i} of size ${nibble}`
+    );
     draw_sprite(state, { x, y }, registers.i, nibble);
     update_screen(state);
     return new_state();
@@ -496,7 +495,7 @@ function tick(state: State): State {
     // LD F, Vx
     if (kk === 0x29) {
       registers.i = registers.v[x] * 5;
-      log(`Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
+      log(`(sprite) Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
       return new_state();
     }
 
@@ -521,9 +520,11 @@ function tick(state: State): State {
       for (let i = 0; i < x + 1; i++) {
         memory[registers.i + i] = registers.v[i];
       }
-      registers.i += x + 1;
+      // registers.i += x + 1;
       log(
-        `Set whole register V in memory at location ${registers.i}`,
+        `Set register V (from ${0} to ${x}) in memory at location ${
+          registers.i
+        }`,
         registers.v
       );
       return new_state();
@@ -533,9 +534,11 @@ function tick(state: State): State {
     if (kk === 0x65) {
       registers.v.set(memory.slice(registers.i, registers.i + x + 1));
       // registers.v = memory.slice(registers.i, registers.i + x + 1);
-      registers.i += x + 1;
+      // registers.i += x + 1;
       log(
-        `Load whole register V from memory at location ${registers.i}`,
+        `Load register V (from ${0} to ${x}) from memory at location ${
+          registers.i
+        }`,
         registers.v
       );
       return new_state();

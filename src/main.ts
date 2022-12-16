@@ -98,6 +98,7 @@ function create_screen_context(root: HTMLElement) {
   });
   const screen_context = create_screen_context(app);
   const rom = await load_rom("./roms/chip8-test-suite.ch8");
+  // const rom = await load_rom("./roms/games/Airplane.ch8");
   const controls = await create_runner(rom, inputs, screen_context);
 
   create_control_button(app, controls);
