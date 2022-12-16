@@ -14,4 +14,6 @@ I used [http://devernay.free.fr/hacks/chip8/C8TECH10.HTM](http://devernay.free.f
 
 ## Roms
 
+[Timendus/chip8-test-suite](https://github.com/Timendus/chip8-test-suite) is a test suite which was SO USEFUL !
+
 [kripod/chip8-roms](https://github.com/kripod/chip8-roms)
