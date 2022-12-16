@@ -126,7 +126,6 @@ export function draw_sprite(
       const sprite_pixel = sprite_row[x - position.x];
       // collision
       if (current_pixel && sprite_pixel) {
-        console.log("collision !", x, y);
         registers.vf = 1;
       }
       screen.grid[y % MAX_SCREEN_HEIGHT][x % MAX_SCREEN_WIDTH] = !!(
