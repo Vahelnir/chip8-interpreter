@@ -102,7 +102,7 @@ export function draw_sprite(
   sprite_address: number,
   sprite_height: number
 ) {
-  registers.vf = 0;
+  registers.v[0xf] = 0;
   let sprite: Uint8Array;
   // TODO: improve the way it loads an internal sprite
   // it will depend on how the memory is improved
@@ -126,12 +126,10 @@ export function draw_sprite(
       const sprite_pixel = sprite_row[x - position.x];
       // collision
       if (current_pixel && sprite_pixel) {
-        registers.vf = 1;
+        registers.v[0xf] = 1;
       }
-      screen.grid[y % MAX_SCREEN_HEIGHT][x % MAX_SCREEN_WIDTH] = !!(
-        (current_pixel || sprite_pixel) &&
-        current_pixel !== sprite_pixel
-      );
+      screen.grid[y % MAX_SCREEN_HEIGHT][x % MAX_SCREEN_WIDTH] =
+        (current_pixel || sprite_pixel) && current_pixel !== sprite_pixel;
     }
   }
 }

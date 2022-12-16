@@ -100,7 +100,6 @@ export async function create_runner(
     registers: {
       v: new Uint8Array(16),
       i: 0,
-      vf: 0,
     },
     memory: create_memory_from_program(program_view),
     screen: { grid: create_screen_grid(), element: screen_element },
@@ -109,9 +108,6 @@ export async function create_runner(
     instruction_index: 512,
     stack: [],
   };
-
-  // CHIP8-TEST-SUITE OPCODE TEST LOADER
-  // state.memory[0x1ff] = 2;
 
   let loop: number | undefined;
   const stop = () => {
@@ -308,6 +304,7 @@ function tick(state: State): State {
         `set V[${x}] to V[${x}](=${registers.v[x]}) XOR V[${y}](=${registers.v[y]}), is now '${xor}'`
       );
       registers.v[x] = xor;
+      // registers.v[0xf] = +(xor !== (registers.v[x] | registers.v[y]));
       return new_state();
     }
 
@@ -319,48 +316,56 @@ function tick(state: State): State {
         `set V[${x}] to V[${x}](=${registers.v[x]}) + V[${y}](=${registers.v[y]}), carry: ${registers.vf}`
       );
       registers.v[x] = sum & 0x0ff;
+      registers.v[0xf] = +(sum > 255);
       return new_state();
     }
 
     // SUB Vx, Vy
     if (nibble === 0x5) {
-      registers.vf = +(registers.v[x] < registers.v[y]);
+      const new_vf = registers.v[x] > registers.v[y];
       log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) - V[${y}](=${registers.v[y]})`
       );
       registers.v[x] -= registers.v[y];
+      registers.v[0xf] = +new_vf;
       return new_state();
     }
 
     // SHR Vx, Vy
     if (nibble === 0x6) {
-      registers.vf = +(registers.v[x] & 0x1);
-      const shifted = registers.v[x] >> 1;
-      log(`right shift V[${x}](=${registers.v[x]}), is now ${shifted}`);
+      let v_position = x;
+      const new_vf = registers.v[v_position] & 0x1;
+      const shifted = registers.v[v_position] >> 1;
+      log(
+        `right shift V[${v_position}](=${registers.v[v_position]}), is now ${shifted}`
+      );
       registers.v[x] = shifted;
+      registers.v[0xf] = new_vf;
       return new_state();
     }
 
     // RSB Vx, Vy
     if (nibble === 0x7) {
-      registers.vf = +(registers.v[y] < registers.v[x]);
+      const new_vf = registers.v[y] > registers.v[x];
       log(
         `set V[${x}] to V[${y}](=${registers.v[y]}) - V[${x}](=${registers.v[x]})`
       );
       registers.v[x] = registers.v[y] - registers.v[x];
+      registers.v[0xf] = +new_vf;
       return new_state();
     }
 
     // SHL Vx, Vy
     if (nibble === 0xe) {
-      let v_position = y === 0 ? x : y;
+      let v_position = x;
 
-      registers.vf = +(registers.v[v_position] & 0x80);
+      const new_vf = (registers.v[v_position] & 0x80) >> 7;
       const shifted = registers.v[v_position] << 1;
       log(
-        `right shift V[${v_position}](=${registers.v[v_position]}), is now ${shifted}`
+        `left shift V[${v_position}](=${registers.v[v_position]}), is now ${shifted}`
       );
       registers.v[x] = shifted;
+      registers.v[0xf] = +new_vf;
       return new_state();
     }
   }
