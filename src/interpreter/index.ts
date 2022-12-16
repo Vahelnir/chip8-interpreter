@@ -179,11 +179,10 @@ function tick(state: State): State {
 
   // CALL addr
   if (op_code === 0x2) {
-    const raw_value = get_addr(instruction);
-    const value = raw_value;
+    const address_to_call = get_addr(instruction);
     stack.push(instruction_index);
     console.log("add to stack:", instruction_index, "current stack:", stack);
-    return new_state({ instruction_index: value });
+    return new_state({ instruction_index: address_to_call });
   }
 
   // SE Vx, byte
@@ -297,7 +296,7 @@ function tick(state: State): State {
     // ADD Vx, Vy
     if (nibble === 0x4) {
       const sum = registers.v[x] + registers.v[y];
-      registers.vf = +((sum & (0xf00 >> 16)) > 0);
+      registers.vf = +(sum > 255);
       console.log(
         `set V[${x}] to V[${x}](=${registers.v[x]}) + V[${y}](=${registers.v[y]}), carry: ${registers.vf}`
       );
