@@ -445,6 +445,37 @@ function tick(state: State): State {
       console.log(`Set I(=${registers.i}) to V[${x}](=${registers.v[x]})`);
       return new_state();
     }
+
+    // LD B, Vx
+    if (kk === 0x33) {
+      let vx = registers.v[x];
+      memory[registers.i + 2] = vx % 10;
+      vx /= Math.floor(10);
+
+      memory[registers.i + 1] = vx % 10;
+      vx /= Math.floor(10);
+
+      memory[registers.i] = vx % 10;
+
+      console.log(`Set V[${x}] in memory`);
+      return new_state();
+    }
+
+    // LD [I], Vx
+    if (kk === 0x55) {
+      memory.set(registers.v, registers.i);
+      console.log(`Set whole register V in memory`);
+      return new_state();
+    }
+
+    // LD [I], Vx
+    if (kk === 0x65) {
+      registers.v = [
+        ...memory.slice(registers.i, registers.i + registers.v.length),
+      ];
+      console.log(`Load whole register V from memory`);
+      return new_state();
+    }
   }
 
   console.log(
