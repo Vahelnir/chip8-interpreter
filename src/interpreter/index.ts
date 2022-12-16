@@ -163,7 +163,7 @@ function tick(state: State): State {
   );
 
   if (instruction[0] === 0x00 && instruction[1] === 0xee) {
-    const unstack_to = stack.shift();
+    const unstack_to = stack.pop();
     if (unstack_to === undefined) {
       throw new Error("Cannot unstack to " + unstack_to);
     }
