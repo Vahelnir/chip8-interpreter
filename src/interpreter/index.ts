@@ -375,6 +375,15 @@ function tick(state: State): State {
     return new_state({ instruction_index: jump_to + registers.v[0] });
   }
 
+  // RND Vx, byte
+  if (op_code === 0xc) {
+    const x = get_x(instruction);
+    const kk = get_kk(instruction);
+    const random = Math.floor(Math.random() * 256);
+    registers.v[x] = random & kk;
+    return new_state();
+  }
+
   // DRW Vx, Vy, nibble
   if (op_code === 0xd) {
     const x_index = get_x(instruction);
